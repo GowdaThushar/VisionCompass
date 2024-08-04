@@ -1,0 +1,118 @@
+import RPi.GPIO as GPIO
+import time
+import pygame
+from queue import Queue
+
+pygame.mixer.init()
+GPIO.setwarnings(False)
+
+ultrasonic_sound = pygame.mixer.Sound("FRONT.mp3")
+ultrasonic_left_sound = pygame.mixer.Sound("LEFT.mp3")
+ultrasonic_right_sound = pygame.mixer.Sound("RIGHT.mp3")
+
+# GPIO Mode (BOARD / BCM)
+GPIO.setmode(GPIO.BOARD)
+
+# Set GPIO Pins for Ultrasonic Sensors
+GPIO_TRIGGER_FRONT = 8
+GPIO_ECHO_FRONT = 10
+GPIO_TRIGGER_LEFT = 16
+GPIO_ECHO_LEFT = 18
+GPIO_TRIGGER_RIGHT = 38
+GPIO_ECHO_RIGHT = 40
+
+# Set GPIO Pins for Buzzer
+GPIO_BUZZER = 3
+
+# Set GPIO direction (IN / OUT)
+GPIO.setup(GPIO_TRIGGER_FRONT, GPIO.OUT)
+GPIO.setup(GPIO_ECHO_FRONT, GPIO.IN)
+GPIO.setup(GPIO_TRIGGER_LEFT, GPIO.OUT)
+GPIO.setup(GPIO_ECHO_LEFT, GPIO.IN)
+GPIO.setup(GPIO_TRIGGER_RIGHT, GPIO.OUT)
+GPIO.setup(GPIO_ECHO_RIGHT, GPIO.IN)
+GPIO.setup(GPIO_BUZZER, GPIO.OUT)
+
+def measure_distance(trigger, echo):
+    # Set Trigger to HIGH
+    GPIO.output(trigger, True)
+
+    # Set Trigger after 0.01ms to LOW
+    time.sleep(0.00001)
+    GPIO.output(trigger, False)
+
+    StartTime = time.time()
+    StopTime = time.time()
+
+    # Save StartTime
+    while GPIO.input(echo) == 0:
+        StartTime = time.time()
+
+    # Save time of arrival
+    while GPIO.input(echo) == 1:
+        StopTime = time.time()
+
+    # Time difference between start and arrival
+    TimeElapsed = StopTime - StartTime
+    # Multiply with the sonic speed (34300 cm/s) and divide by 2 (there and back)
+    distance = (TimeElapsed * 34300) / 2
+
+    return distance
+
+def play_sound(sound_queue):
+    while not sound_queue.empty():
+        sound = sound_queue.get()
+        sound.play()
+        time.sleep(sound.get_length())
+
+def buzz(duration):
+    GPIO.output(GPIO_BUZZER, True)
+    time.sleep(duration)
+    GPIO.output(GPIO_BUZZER, False)
+
+if __name__ == '__main__':
+    try:
+        ultrasonic_last_played = 0
+        ultrasonic_left_last_played = 0
+        ultrasonic_right_last_played = 0
+        
+        sound_queue = Queue()
+        
+        while True:
+            dist_front = measure_distance(GPIO_TRIGGER_FRONT, GPIO_ECHO_FRONT)
+            dist_left = measure_distance(GPIO_TRIGGER_LEFT, GPIO_ECHO_LEFT)
+            dist_right = measure_distance(GPIO_TRIGGER_RIGHT, GPIO_ECHO_RIGHT)
+            
+            current_time = time.time()
+            
+            # Add front ultrasonic sound to queue and buzz if an object is detected within 20 cm and it has been 2 seconds since the last play
+            if dist_front <= 20 and current_time - ultrasonic_last_played >= 2:
+                print("Object detected by Front Ultrasonic Sensor")
+                sound_queue.put(ultrasonic_sound)
+                buzz(0.5)  # Buzz for 0.5 seconds
+                ultrasonic_last_played = current_time
+            
+            # Add left ultrasonic sound to queue and buzz if an object is detected within 20 cm and it has been 2 seconds since the last play
+            if dist_left <= 20 and current_time - ultrasonic_left_last_played >= 2:
+                print("Object detected by Left Ultrasonic Sensor")
+                sound_queue.put(ultrasonic_left_sound)
+                buzz(0.5)  # Buzz for 0.5 seconds
+                ultrasonic_left_last_played = current_time
+            
+            # Add right ultrasonic sound to queue and buzz if an object is detected within 20 cm and it has been 2 seconds since the last play
+            if dist_right <= 20 and current_time - ultrasonic_right_last_played >= 2:
+                print("Object detected by Right Ultrasonic Sensor")
+                sound_queue.put(ultrasonic_right_sound)
+                buzz(0.5)  # Buzz for 0.5 seconds
+                ultrasonic_right_last_played = current_time
+            
+            # Play sounds from the queue
+            play_sound(sound_queue)
+            
+            time.sleep(0.1)  # Decrease the delay for faster response
+
+    # Reset by pressing CTRL + C
+    except KeyboardInterrupt:
+        print("Measurement stopped by User")
+        GPIO.cleanup()
+
